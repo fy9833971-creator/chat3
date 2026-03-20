@@ -3,39 +3,37 @@
 <head>
     <meta charset="UTF-8">
     <meta name="viewport" content="width=device-width, initial-scale=1.0">
-    <title>Social Chat - Bos Ferdi</title>
-    <script src="https://www.gstatic.com/firebasejs/8.10.0/firebase-app.js"></script>
-    <script src="https://www.gstatic.com/firebasejs/8.10.0/firebase-database.js"></script>
+    <title>Chat Online - Bos Ferdi</title>
+    <script src="https://cdn.scaledrone.com/scaledrone.min.js"></script>
     <style>
         * { box-sizing: border-box; margin: 0; padding: 0; font-family: 'Segoe UI', sans-serif; }
-        body { background: #111; color: white; display: flex; justify-content: center; align-items: center; height: 100vh; overflow: hidden; }
+        body { background: #111; color: white; display: flex; justify-content: center; align-items: center; height: 100vh; }
         #login-section { background: #222; padding: 30px; border-radius: 15px; width: 90%; max-width: 400px; text-align: center; }
         input { width: 100%; padding: 12px; margin: 10px 0; border-radius: 8px; border: 1px solid #444; background: #333; color: white; outline: none; }
         .btn-primary { width: 100%; padding: 12px; background: #0084ff; border: none; color: white; font-weight: bold; border-radius: 8px; cursor: pointer; }
         #app-container { display: none; width: 100%; max-width: 500px; height: 95vh; background: #1e1e1e; flex-direction: column; border-radius: 15px; overflow: hidden; }
-        header { background: #2d2d2d; padding: 15px; text-align: center; border-bottom: 1px solid #333; }
+        header { background: #2d2d2d; padding: 15px; text-align: center; border-bottom: 1px solid #333; font-weight: bold; }
         #chat-box { flex: 1; padding: 20px; overflow-y: auto; display: flex; flex-direction: column; gap: 12px; background: #121212; }
-        .msg { max-width: 75%; padding: 10px 15px; border-radius: 18px; font-size: 14px; position: relative; line-height: 1.4; }
+        .msg { max-width: 75%; padding: 10px 15px; border-radius: 18px; font-size: 14px; line-height: 1.4; }
         .me { align-self: flex-end; background: #0084ff; border-bottom-right-radius: 4px; }
         .others { align-self: flex-start; background: #333; border-bottom-left-radius: 4px; }
-        .sender-name { font-size: 10px; font-weight: bold; color: #aaa; margin-bottom: 4px; display: block; }
+        .sender-name { font-size: 10px; color: #888; margin-bottom: 4px; display: block; }
         .input-area { padding: 15px; display: flex; gap: 10px; background: #2d2d2d; }
         .input-area input { margin: 0; flex: 1; }
         .btn-send { background: #0084ff; padding: 0 20px; border-radius: 8px; border: none; color: white; cursor: pointer; font-weight: bold; }
-        .hidden { display: none !important; }
     </style>
 </head>
 <body>
 
     <div id="login-section">
-        <h2 style="color: #0084ff;">FakeBook Chat</h2>
+        <h2 style="color:#0084ff">FakeBook Online</h2>
         <input type="text" id="userid" placeholder="ID (ferdi / user2)">
         <input type="password" id="userpass" placeholder="Password (123 / 456)">
-        <button class="btn-primary" onclick="handleLogin()">Login</button>
+        <button class="btn-primary" onclick="handleLogin()">Masuk Chat</button>
     </div>
 
     <div id="app-container">
-        <header><strong id="display-name" style="color: #0084ff;">User</strong></header>
+        <header><span id="display-name" style="color:#0084ff">User</span></header>
         <div id="chat-box"></div>
         <div class="input-area">
             <input type="text" id="chat-input" placeholder="Tulis pesan...">
@@ -44,62 +42,53 @@
     </div>
 
     <script>
-        // KONFIGURASI DATABASE GOOGLE (Realtime)
-        const firebaseConfig = {
-            databaseURL: "https://chat-ferdi-default-rtdb.firebaseio.com/"
-        };
-        firebase.initializeApp(firebaseConfig);
-        const db = firebase.database().ref('messages');
+        const CLIENT_ID = 'yjS79n7m6A98t6v7'; // ID Server Online
+        let drone, room, currentUser;
 
         const users = [
             { id: "ferdi", pass: "123", name: "Bos Ferdi" },
             { id: "user2", pass: "456", name: "User Dua" }
         ];
 
-        let currentUser = null;
-
         function handleLogin() {
             const id = document.getElementById('userid').value;
             const pass = document.getElementById('userpass').value;
             const user = users.find(u => u.id === id && u.pass === pass);
-
+            
             if (user) {
                 currentUser = user;
-                document.getElementById('login-section').classList.add('hidden');
+                document.getElementById('login-section').style.display = 'none';
                 document.getElementById('app-container').style.display = 'flex';
                 document.getElementById('display-name').innerText = currentUser.name;
                 
-                // MENGHIDUPKAN RADAR PESAN (Realtime Listener)
-                listenForMessages();
-            } else { alert("ID/Pass salah!"); }
-        }
-
-        function listenForMessages() {
-            // Ini yang bikin HP lain otomatis dapet pesan
-            db.limitToLast(50).on('child_added', (snapshot) => {
-                const data = snapshot.val();
-                renderMessage(data.sender, data.text);
-            });
+                // MENGAKTIFKAN SERVER ONLINE
+                drone = new ScaleDrone(CLIENT_ID, { data: { name: currentUser.name } });
+                
+                drone.on('open', error => {
+                    if (error) return console.error(error);
+                    room = drone.subscribe('observable-room-ferdi');
+                    
+                    room.on('data', (data, member) => {
+                        const isMe = member.id === drone.clientId;
+                        renderMessage(data.sender, data.text, isMe);
+                    });
+                });
+            } else { alert("ID atau Password salah!"); }
         }
 
         function sendChat() {
             const input = document.getElementById('chat-input');
-            const text = input.value.trim();
-            if (!text) return;
+            if (!input.value.trim() || !room) return;
 
-            // KIRIM KE PAPAN TULIS GOOGLE
-            db.push({
-                sender: currentUser.name,
-                text: text,
-                timestamp: Date.now()
+            drone.publish({
+                room: 'observable-room-ferdi',
+                message: { sender: currentUser.name, text: input.value }
             });
-
             input.value = '';
         }
 
-        function renderMessage(sender, text) {
+        function renderMessage(sender, text, isMe) {
             const chatBox = document.getElementById('chat-box');
-            const isMe = sender === currentUser.name;
             const msgDiv = document.createElement('div');
             msgDiv.className = `msg ${isMe ? 'me' : 'others'}`;
             msgDiv.innerHTML = `<span class="sender-name">${isMe ? 'Anda' : sender}</span>${text}`;
